@@ -384,6 +384,9 @@ export default function App() {
   const [viewMonth,setViewMonth]=useState(currentMonthKey());
   const realMonth = currentMonthKey();
   const isViewingCurrent = viewMonth === realMonth;
+  const isViewingFuture = viewMonth > realMonth;
+  // navegação pro futuro é limitada a 1 mês (pra dar pra planejar o tema com antecedência)
+  const maxViewMonth = addMonths(realMonth,1);
 
   const {data:members,loading:lM}=useCol("members");
   const {data:books,loading:lB}=useCol("books");
@@ -393,6 +396,7 @@ export default function App() {
   const {data:progressComments}=useCol("progressComments");
 
   const {data:rulesDoc}  =useDocFS("monthRules",realMonth);
+  const {data:viewRulesDoc}=useDocFS("monthRules",viewMonth);
   const {data:votesDoc}  =useDocFS("votes",realMonth);
   const {data:elimDoc}   =useDocFS("indivElim",realMonth);
   const {data:permsDoc}  =useDocFS("monthPerms",realMonth);
@@ -403,6 +407,7 @@ export default function App() {
   const {data:themeOffers}=useCol("themeOffers");
 
   const rules  = {suggLimit:2,hasTheme:false,theme:"",maxElimVotes:2,meetingDay:"",meetingTime:"",meetingLocal:"",...rulesDoc};
+  const viewRules = {suggLimit:2,hasTheme:false,theme:"",maxElimVotes:2,meetingDay:"",meetingTime:"",meetingLocal:"",...viewRulesDoc};
   const curVotes = votesDoc||{};
   const curElim  = elimDoc||{};
   const perms    = permsDoc||{};
@@ -410,6 +415,7 @@ export default function App() {
   const config   = {powerCycleStart:"2025-01",...configDoc};
   const setConfig= (v)=>FS.set("config","general",v);
   const powerCycle = cycleIndexFor(realMonth, config.powerCycleStart);
+  const viewPowerCycle = cycleIndexFor(viewMonth, config.powerCycleStart);
 
   useEffect(()=>{const on=()=>setOnline(true);const off=()=>setOnline(false);window.addEventListener("online",on);window.addEventListener("offline",off);return()=>{window.removeEventListener("online",on);window.removeEventListener("offline",off);};},[]);
 
@@ -440,6 +446,7 @@ export default function App() {
   const setElim=(v)=>FS.set("indivElim",realMonth,v);
   const setPerms=(v)=>FS.set("monthPerms",realMonth,v);
   const setRules=(v)=>FS.set("monthRules",realMonth,v);
+  const setViewRules=(v)=>FS.set("monthRules",viewMonth,v);
 
   const canDo=(memberId,action)=>{
     // Admin participa normalmente — sem restrições de fase ou permissão individual
@@ -484,7 +491,8 @@ export default function App() {
     <LoginScreen members={members} onLogin={setCurrentUser} showToast={showToast} toast={toast}/></>
   );
 
-  const sharedProps={members,books,suggestions,ratings,reviews,progressComments,currentUser,realMonth,viewMonth,rules,phase,curVotes,curElim,perms,voteCounts,getBookRatings,getBookAvg,setPhase,setVotes,setElim,setRules,setPerms,canDo,showToast,setPage,isViewingCurrent,
+  const sharedProps={members,books,suggestions,ratings,reviews,progressComments,currentUser,realMonth,viewMonth,rules,phase,curVotes,curElim,perms,voteCounts,getBookRatings,getBookAvg,setPhase,setVotes,setElim,setRules,setPerms,canDo,showToast,setPage,isViewingCurrent,isViewingFuture,
+    viewRules,setViewRules,viewPowerCycle,
     powerUses,powerCycle,config,setConfig,delegateDoc,themeOffers,
     // aliases usados pelo EliminationPage
     indivElim:curElim, setIndivElim:setElim,
@@ -517,7 +525,7 @@ export default function App() {
         <div className="month-switcher">
           <button className="month-nav-btn" onClick={()=>setViewMonth(m=>addMonths(m,-1))}>‹</button>
           <span>{formatMonthShort(viewMonth)}</span>
-          <button className="month-nav-btn" onClick={()=>setViewMonth(m=>addMonths(m,1))} disabled={isViewingCurrent}>›</button>
+          <button className="month-nav-btn" onClick={()=>setViewMonth(m=>addMonths(m,1))} disabled={viewMonth>=maxViewMonth}>›</button>
         </div>
 
         <div className="header-right">
@@ -536,7 +544,7 @@ export default function App() {
           <div className="month-switcher">
             <button className="month-nav-btn" onClick={()=>setViewMonth(m=>addMonths(m,-1))}>‹</button>
             <span>{formatMonthShort(viewMonth)}</span>
-            <button className="month-nav-btn" onClick={()=>setViewMonth(m=>addMonths(m,1))} disabled={isViewingCurrent}>›</button>
+            <button className="month-nav-btn" onClick={()=>setViewMonth(m=>addMonths(m,1))} disabled={viewMonth>=maxViewMonth}>›</button>
           </div>
           <div className={`sync-dot${online?"":" off"}`}/>
           <button className="header-avatar-btn" onClick={()=>setCurrentUser(null)}>
@@ -1002,13 +1010,15 @@ function HomePage({books,members,realMonthSugg,viewMonthSugg,ratings,progressCom
 }
 
 // ─── SUGGEST ──────────────────────────────────────────────────────────────────
-function SuggestPage({suggestions,books,members,currentUser,realMonth,viewMonth,rules,setRules,phase,canDo,showToast,isViewingCurrent,viewMonthSugg,realMonthSugg,powerCycle,config,themeOffers}) {
+function SuggestPage({suggestions,books,members,currentUser,realMonth,viewMonth,rules,setRules,phase,canDo,showToast,isViewingCurrent,isViewingFuture,viewMonthSugg,realMonthSugg,powerCycle,config,themeOffers,viewRules,setViewRules,viewPowerCycle}) {
   const [tab,setTab]=useState("add");
   const [form,setForm]=useState({title:"",author:"",theme:"",pages:"",link:"",suggestedBy:currentUser.id});
   const [coverFile,setCoverFile]=useState("");
   const [saving,setSaving]=useState(false);
   const [themeInput,setThemeInput]=useState("");
   const [savingTheme,setSavingTheme]=useState(false);
+  const [viewThemeInput,setViewThemeInput]=useState("");
+  const [savingViewTheme,setSavingViewTheme]=useState(false);
   const fileRef=useRef();
   const setF=(k,v)=>setForm(f=>({...f,[k]:v}));
 
@@ -1033,6 +1043,18 @@ function SuggestPage({suggestions,books,members,currentUser,realMonth,viewMonth,
     await setRules({...rules,theme:themeInput.trim(),themeBy:currentUser.id});
     await FS.set("themeOffers",`${currentUser.id}_${powerCycle}`,{memberId:currentUser.id,cycle:powerCycle,month:realMonth,theme:themeInput.trim(),ts:new Date().toISOString()});
     setSavingTheme(false);setThemeInput("");showToast("🏷️ Tema oferecido!");
+  };
+
+  // Tema do mês seguinte (planejado com antecedência, via seletor de mês no cabeçalho)
+  const myViewThemeUse=themeOffers.find(t=>t.memberId===currentUser.id&&t.cycle===viewPowerCycle);
+  const canOfferViewTheme=currentUser.id!=="adm"&&!myViewThemeUse&&!viewRules.theme;
+  const viewThemeOfferedBy=members.find(m=>m.id===viewRules.themeBy);
+  const offerViewTheme=async()=>{
+    if(!viewThemeInput.trim())return;
+    setSavingViewTheme(true);
+    await setViewRules({...viewRules,theme:viewThemeInput.trim(),themeBy:currentUser.id});
+    await FS.set("themeOffers",`${currentUser.id}_${viewPowerCycle}`,{memberId:currentUser.id,cycle:viewPowerCycle,month:viewMonth,theme:viewThemeInput.trim(),ts:new Date().toISOString()});
+    setSavingViewTheme(false);setViewThemeInput("");showToast(`🏷️ Tema de ${formatMonthYear(viewMonth)} oferecido!`);
   };
 
   // Bot: só avisa sobre membros não-admin que não sugeriram
@@ -1153,6 +1175,29 @@ function SuggestPage({suggestions,books,members,currentUser,realMonth,viewMonth,
               <div style={{display:"flex",gap:".5rem"}}>
                 <input className="form-input" placeholder="Ex: literatura latino-americana" value={themeInput} onChange={e=>setThemeInput(e.target.value)}/>
                 <button className="btn btn-pink btn-sm" disabled={!themeInput.trim()||savingTheme} onClick={offerTheme}>{savingTheme?"...":"Oferecer"}</button>
+              </div>
+            </>
+          ):currentUser.id!=="adm"?(
+            <div style={{fontSize:".78rem",color:"rgba(26,26,46,.5)",fontWeight:600}}>Você já ofereceu um tema neste ciclo. Aguardando outra pessoa definir o tema deste mês.</div>
+          ):(
+            <div style={{fontSize:".78rem",color:"rgba(26,26,46,.5)",fontWeight:600}}>Aguardando algum membro oferecer o tema deste mês (ou defina em Painel → Regras).</div>
+          )}
+        </div>
+      )}
+
+      {isViewingFuture&&(
+        <div className="card c-purple no-hover" style={{marginBottom:"1rem",border:"2px dashed var(--purple)"}}>
+          <div style={{fontFamily:"var(--fd)",fontSize:".8rem",letterSpacing:"2px",color:"var(--purple)",marginBottom:".4rem"}}>🔮 TEMA DE {formatMonthYear(viewMonth).toUpperCase()}</div>
+          {!viewRules.hasTheme?(
+            <div style={{fontSize:".78rem",color:"rgba(26,26,46,.5)",fontWeight:600}}>Este mês ainda não tem tema obrigatório ativado. Ative em Painel → Regras (visualizando este mês) para poder planejar o tema com antecedência.</div>
+          ):viewRules.theme?(
+            <div style={{fontSize:".85rem",fontWeight:700}}>{viewRules.theme}{viewThemeOfferedBy&&<span style={{color:"rgba(26,26,46,.45)",fontWeight:600}}> — oferecido por {viewThemeOfferedBy.name}</span>}</div>
+          ):canOfferViewTheme?(
+            <>
+              <div style={{fontSize:".78rem",color:"rgba(26,26,46,.55)",fontWeight:600,marginBottom:".5rem"}}>Você pode oferecer o tema deste mês futuro com antecedência (1 tema por ciclo de 14 meses).</div>
+              <div style={{display:"flex",gap:".5rem"}}>
+                <input className="form-input" placeholder="Ex: literatura latino-americana" value={viewThemeInput} onChange={e=>setViewThemeInput(e.target.value)}/>
+                <button className="btn btn-pink btn-sm" disabled={!viewThemeInput.trim()||savingViewTheme} onClick={offerViewTheme}>{savingViewTheme?"...":"Oferecer"}</button>
               </div>
             </>
           ):currentUser.id!=="adm"?(
@@ -2047,9 +2092,13 @@ function LockBadge() {
   );
 }
 
-function AdminPage({members,books,suggestions,ratings,reviews,setRules,curVotes,setVotes,curElim,setElim,perms,setPerms,currentUser,realMonth,rules,phase,setPhase,showToast,realMonthSugg,powerUses,powerCycle,config,setConfig}) {
+function AdminPage({members,books,suggestions,ratings,reviews,setRules,curVotes,setVotes,curElim,setElim,perms,setPerms,currentUser,realMonth,rules,phase,setPhase,showToast,realMonthSugg,powerUses,powerCycle,config,setConfig,viewMonth,isViewingCurrent,viewRules,setViewRules}) {
   const [tab,setTab]=useState("members");
   const isAdm=currentUser.isAdmin;
+  // Painel → Regras edita o mês visualizado (permite configurar o tema do mês seguinte com antecedência)
+  const rulesMonth=isViewingCurrent?realMonth:viewMonth;
+  const rulesForMonth=isViewingCurrent?rules:viewRules;
+  const setRulesForMonth=isViewingCurrent?setRules:setViewRules;
 
   // Banner para não-admin
   const ReadOnlyBanner=()=>(
@@ -2076,7 +2125,7 @@ function AdminPage({members,books,suggestions,ratings,reviews,setRules,curVotes,
 
       {tab==="members" &&<AdminMembers members={members} isAdm={isAdm} showToast={showToast} books={books} ratings={ratings} reviews={reviews} suggestions={suggestions} currentUser={currentUser}/>}
       {tab==="perms"   &&<AdminPerms  members={members} perms={perms} setPerms={setPerms} month={realMonth} isAdm={isAdm} showToast={showToast}/>}
-      {tab==="rules"   &&<AdminRules  month={realMonth} rules={rules} setRules={setRules} isAdm={isAdm} showToast={showToast}/>}
+      {tab==="rules"   &&<AdminRules  month={rulesMonth} rules={rulesForMonth} setRules={setRulesForMonth} isAdm={isAdm} showToast={showToast}/>}
       {tab==="powers"  &&<AdminPowers members={members} books={books} powerUses={powerUses} powerCycle={powerCycle} config={config} setConfig={setConfig} isAdm={isAdm} showToast={showToast}/>}
       {tab==="phase"   &&<AdminPhase  phase={phase} setPhase={setPhase} month={realMonth} suggestions={realMonthSugg} curVotes={curVotes} setVotes={setVotes} curElim={curElim} setElim={setElim} isAdm={isAdm} showToast={showToast}/>}
       {tab==="export"  &&<AdminExport books={books} members={members} suggestions={suggestions} ratings={ratings} showToast={showToast}/>}
@@ -2321,6 +2370,8 @@ function AdminPowers({members,books,powerUses,powerCycle,config,setConfig,isAdm,
 // ── ADMIN: REGRAS ─────────────────────────────────────────────────────────────
 function AdminRules({month, rules, setRules, isAdm, showToast}) {
   const [form,setForm]=useState({...rules});
+  // Re-sincroniza o formulário ao trocar de mês (ex: alternar entre mês atual e mês seguinte)
+  useEffect(()=>{setForm({...rules})},[month]);
   const set=(k,v)=>setForm(f=>({...f,[k]:v}));
   const save=async()=>{await setRules(form);showToast("Regras salvas! ✅");};
   const days=["Segunda","Terça","Quarta","Quinta","Sexta","Sábado","Domingo"];
