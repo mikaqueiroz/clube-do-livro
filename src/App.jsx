@@ -1022,16 +1022,20 @@ function SuggestPage({suggestions,books,members,currentUser,realMonth,viewMonth,
   const fileRef=useRef();
   const setF=(k,v)=>setForm(f=>({...f,[k]:v}));
 
-  // Show real month sugg for bot / limit, viewMonth sugg for list
-  const mySuggCount=realMonthSugg.filter(s=>s.suggestedBy===currentUser.id).length;
+  // Mês pro qual a sugestão é salva: o mês real, exceto quando se está planejando o mês seguinte com antecedência
+  const targetMonth=isViewingFuture?viewMonth:realMonth;
+  const targetMonthSugg=isViewingFuture?viewMonthSugg:realMonthSugg;
+  const activeRules=isViewingFuture?viewRules:rules;
+  const mySuggCount=targetMonthSugg.filter(s=>s.suggestedBy===currentUser.id).length;
 
   // Bloqueio de mês livre: quem já teve livro sorteado em mês livre neste ciclo não sugere de novo em mês livre
-  const myFreeWin=(!rules.hasTheme)?books.find(b=>b.suggestedBy===currentUser.id&&b.wasThemed===false&&b.date&&cycleIndexFor(b.date.slice(0,7),config.powerCycleStart)===powerCycle):null;
+  const myFreeWin=(!activeRules.hasTheme)?books.find(b=>b.suggestedBy===currentUser.id&&b.wasThemed===false&&b.date&&cycleIndexFor(b.date.slice(0,7),config.powerCycleStart)===(isViewingFuture?viewPowerCycle:powerCycle)):null;
   const freeMonthBlocked=!currentUser.isAdmin&&!!myFreeWin;
 
-  // Admin pode sempre sugerir (canDo retorna true para admin); outros seguem regras normais
-  const canSuggest=canDo(currentUser.id,"suggest")&&mySuggCount<rules.suggLimit&&!freeMonthBlocked;
-  const pageWarn=form.pages?checkPageLimit(parseInt(form.pages),realMonth):null;
+  // Admin pode sempre sugerir (canDo retorna true para admin); outros seguem regras normais.
+  // Pro mês seguinte (planejamento com antecedência) não existe fase ainda, então só valem limite e bloqueio de mês livre.
+  const canSuggest=(isViewingFuture?true:canDo(currentUser.id,"suggest"))&&mySuggCount<activeRules.suggLimit&&!freeMonthBlocked;
+  const pageWarn=form.pages?checkPageLimit(parseInt(form.pages),targetMonth):null;
 
   // Tema do mês — 1 pessoa por ciclo de 14 meses pode oferecer 1 tema (mesmo ciclo dos poderes)
   const myThemeUse=themeOffers.find(t=>t.memberId===currentUser.id&&t.cycle===powerCycle);
@@ -1095,17 +1099,17 @@ function SuggestPage({suggestions,books,members,currentUser,realMonth,viewMonth,
 
   const handleAdd=async()=>{
     if(!form.title.trim())return showToast("Informe o título 📖");
-    if(!canSuggest)return showToast(mySuggCount>=rules.suggLimit?`Limite de ${rules.suggLimit} sugestão(ões)!`:"Sugestões desabilitadas para você.");
+    if(!canSuggest)return showToast(mySuggCount>=activeRules.suggLimit?`Limite de ${activeRules.suggLimit} sugestão(ões)!`:"Sugestões desabilitadas para você.");
     const dup=books.find(b=>b.title.trim().toLowerCase()===form.title.trim().toLowerCase());
     if(dup)return showToast(`"${form.title}" já foi lido! ⚠️`);
-    const dupS=realMonthSugg.find(s=>s.title.trim().toLowerCase()===form.title.trim().toLowerCase());
+    const dupS=targetMonthSugg.find(s=>s.title.trim().toLowerCase()===form.title.trim().toLowerCase());
     if(dupS)return showToast("Esse livro já foi sugerido este mês!");
     setSaving(true);
     const id=uid();
-    await FS.set("suggestions",id,{id,...form,cover:coverFile,month:realMonth,addedAt:new Date().toISOString(),eliminated:false,raffled:false});
+    await FS.set("suggestions",id,{id,...form,cover:coverFile,month:targetMonth,addedAt:new Date().toISOString(),eliminated:false,raffled:false});
     setForm({title:"",author:"",theme:"",pages:"",link:"",suggestedBy:currentUser.id});
     setCoverFile("");
-    showToast(pageWarn?pageWarn:"Sugestão adicionada! 💡");
+    showToast(pageWarn?pageWarn:`Sugestão adicionada para ${formatMonthYear(targetMonth)}! 💡`);
     setTab("list");setSaving(false);
   };
 
@@ -1117,12 +1121,12 @@ function SuggestPage({suggestions,books,members,currentUser,realMonth,viewMonth,
   };
 
   const addFromHistory=async(book)=>{
-    const dupS=realMonthSugg.find(s=>s.title.trim().toLowerCase()===book.title.trim().toLowerCase());
+    const dupS=targetMonthSugg.find(s=>s.title.trim().toLowerCase()===book.title.trim().toLowerCase());
     if(dupS)return showToast("Esse livro já está nas sugestões!");
     if(!canSuggest)return showToast("Você não pode mais sugerir este mês.");
     const id=uid();
-    await FS.set("suggestions",id,{id,title:book.title,author:book.author,theme:book.theme,pages:book.pages,cover:book.cover||"",link:book.link||"",suggestedBy:currentUser.id,month:realMonth,addedAt:new Date().toISOString(),eliminated:false,raffled:false,fromHistory:true});
-    showToast("Adicionado! 📚");setTab("list");
+    await FS.set("suggestions",id,{id,title:book.title,author:book.author,theme:book.theme,pages:book.pages,cover:book.cover||"",link:book.link||"",suggestedBy:currentUser.id,month:targetMonth,addedAt:new Date().toISOString(),eliminated:false,raffled:false,fromHistory:true});
+    showToast(`Adicionado em ${formatMonthYear(targetMonth)}! 📚`);setTab("list");
   };
 
   // histórico: todas as sugestões não lidas (não estão nos livros)
@@ -1222,22 +1226,25 @@ function SuggestPage({suggestions,books,members,currentUser,realMonth,viewMonth,
 
       {tab==="add"&&(
         <div className="card c-green no-hover card-stripe cs-green" style={{position:"relative"}}>
+          {isViewingFuture&&(
+            <div className="alert alert-info" style={{marginBottom:".85rem"}}>🔮 Sugerindo para <strong>{formatMonthYear(targetMonth)}</strong> (mês seguinte).</div>
+          )}
           {!canSuggest&&(
             <div className="locked-overlay">
               <div className="lock-ico">🔒</div>
               <div className="lock-txt">
-                {phase!=="suggest"&&!currentUser.isAdmin
+                {!isViewingFuture&&phase!=="suggest"&&!currentUser.isAdmin
                   ?"Fase de sugestões encerrada"
                   :freeMonthBlocked
                   ?"Bloqueado(a) em mês livre neste ciclo"
-                  :`Limite de ${rules.suggLimit} sugestão(ões) atingido`}
+                  :`Limite de ${activeRules.suggLimit} sugestão(ões) atingido`}
               </div>
             </div>
           )}
           {pageWarn&&<div className="alert alert-warn">{pageWarn}</div>}
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1rem"}}>
             <div style={{fontFamily:"var(--fd)",fontSize:"1.1rem",letterSpacing:"2px"}}>NOVO LIVRO</div>
-            <div className="tag tag-green">{mySuggCount}/{rules.suggLimit} usadas</div>
+            <div className="tag tag-green">{mySuggCount}/{activeRules.suggLimit} usadas</div>
           </div>
           <div className="form-row">
             <div className="form-group"><label className="form-label">SUGESTÃO DE</label>
@@ -1250,7 +1257,7 @@ function SuggestPage({suggestions,books,members,currentUser,realMonth,viewMonth,
           <div className="form-group"><label className="form-label">TÍTULO *</label><input className="form-input" placeholder="Nome do livro" value={form.title} onChange={e=>setF("title",e.target.value)}/></div>
           <div className="form-row">
             <div className="form-group"><label className="form-label">AUTOR</label><input className="form-input" placeholder="Autor/a" value={form.author} onChange={e=>setF("author",e.target.value)}/></div>
-            <div className="form-group"><label className="form-label">TEMA</label><input className="form-input" placeholder={rules.hasTheme?rules.theme:"Ex: romance"} value={form.theme} onChange={e=>setF("theme",e.target.value)}/></div>
+            <div className="form-group"><label className="form-label">TEMA</label><input className="form-input" placeholder={activeRules.hasTheme?activeRules.theme:"Ex: romance"} value={form.theme} onChange={e=>setF("theme",e.target.value)}/></div>
           </div>
           <div className="form-group"><label className="form-label">LINK EXTERNO</label><input className="form-input" placeholder="https://..." value={form.link} onChange={e=>setF("link",e.target.value)}/></div>
           <div className="form-group">
@@ -1268,7 +1275,7 @@ function SuggestPage({suggestions,books,members,currentUser,realMonth,viewMonth,
         <div>
           {!isViewingCurrent&&<div className="alert alert-info">👁️ Visualizando sugestões de {formatMonthYear(viewMonth)}</div>}
           {displaySugg.length===0?<div className="empty"><div className="ico">💭</div><div className="ttl">SEM SUGESTÕES</div><div className="txt">Seja o primeiro a sugerir!</div></div>
-          :displaySugg.map((s,i)=><SuggCard key={s.id} s={s} i={i} members={members} currentUser={currentUser} onDelete={isViewingCurrent?()=>handleDelete(s.id):null} books={books}/>)}
+          :displaySugg.map((s,i)=><SuggCard key={s.id} s={s} i={i} members={members} currentUser={currentUser} onDelete={(isViewingCurrent||isViewingFuture)?()=>handleDelete(s.id):null} books={books}/>)}
         </div>
       )}
 
