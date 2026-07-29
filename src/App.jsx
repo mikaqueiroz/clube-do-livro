@@ -1557,17 +1557,21 @@ function EliminationPage({monthSugg,curVotes,setVotes,curElim,setElim,members,cu
 
 // ─── PODER DO CICLO ────────────────────────────────────────────────────────────
 function PowerPanel({members,currentUser,monthSugg,books,realMonth,phase,powerUses,powerCycle,raffledBook,setPhase,showToast,rules}) {
-  const [open,setOpen]=useState(null);
   const [picks,setPicks]=useState([]);
   const [picksBack,setPicksBack]=useState([]);
   const [saving,setSaving]=useState(false);
+  const [drawing,setDrawing]=useState(false);
 
   const pool=monthSugg.filter(s=>!s.eliminated&&!s.raffled);
   const elimPool=monthSugg.filter(s=>s.eliminated);
   const myUse=powerUses.find(p=>p.memberId===currentUser.id&&p.cycle===powerCycle);
-  const available=!myUse;
+  // myUse existe assim que o poder é sorteado (details:{}); só fica "concluído" quando a ação é executada.
+  const hasDetails=myUse&&myUse.details&&Object.keys(myUse.details).length>0;
+  const available=!myUse; // ainda não sorteou poder neste ciclo
+  const pending=myUse&&!hasDetails; // sorteou, falta executar a ação
+  const open=pending?myUse.power:null;
 
-  const reset=()=>{setOpen(null);setPicks([]);setPicksBack([]);setSaving(false);};
+  const reset=()=>{setPicks([]);setPicksBack([]);setSaving(false);};
 
   const record=async(power,details)=>{
     await FS.set("powerUses",`${currentUser.id}_${powerCycle}`,{memberId:currentUser.id,cycle:powerCycle,power,month:realMonth,details:details||{},ts:new Date().toISOString()});
@@ -1648,36 +1652,41 @@ function PowerPanel({members,currentUser,monthSugg,books,realMonth,phase,powerUs
     return null;
   };
 
+  // Sorteia o poder do ciclo entre os que fazem sentido agora (ex: não sorteia "ressuscitar" sem eliminados)
+  const usablePowers=POWERS.filter(p=>!disabledReason(p));
+  const drawPower=()=>{
+    if(usablePowers.length===0)return showToast("Nenhum poder disponível agora — tente de novo mais tarde.");
+    setDrawing(true);
+    setTimeout(async()=>{
+      const winner=usablePowers[Math.floor(Math.random()*usablePowers.length)];
+      await record(winner.id,{});
+      setDrawing(false);
+      showToast(`🎲 Poder sorteado: ${winner.label}!`);
+    },1800);
+  };
+
   return(
     <div>
-      <div className={`card no-hover ${available?"c-green":"c-orange"}`} style={{marginBottom:"1rem"}}>
-        <div style={{fontFamily:"var(--fd)",fontSize:".8rem",letterSpacing:"2px",color:available?"var(--green)":"var(--orange)",marginBottom:".4rem"}}>SEU PODER</div>
+      <div className={`card no-hover ${available?"c-green":pending?"c-yellow":"c-orange"}`} style={{marginBottom:"1rem"}}>
+        <div style={{fontFamily:"var(--fd)",fontSize:".8rem",letterSpacing:"2px",color:available?"var(--green)":pending?"#7A5800":"var(--orange)",marginBottom:".4rem"}}>SEU PODER</div>
         {available
-          ?<div style={{fontSize:".85rem",fontWeight:700}}>Disponível neste ciclo. Você pode usar 1 poder — depois disso, só no próximo ciclo (14 meses).</div>
-          :<div style={{fontSize:".85rem",fontWeight:700}}>Já usado neste ciclo: <strong>{powerLabel(myUse.power)}</strong> em {formatMonthYear(myUse.month)}. Você poderá usar de novo apenas no próximo ciclo.</div>}
+          ?<div style={{fontSize:".85rem",fontWeight:700}}>Você ainda não sorteou seu poder deste ciclo. Sorteia 1 vez — depois disso, só no próximo ciclo (14 meses).</div>
+          :pending
+          ?<div style={{fontSize:".85rem",fontWeight:700}}>Poder sorteado: <strong>{powerLabel(myUse.power)}</strong>. Finalize a ação abaixo.</div>
+          :<div style={{fontSize:".85rem",fontWeight:700}}>Já usado neste ciclo: <strong>{powerLabel(myUse.power)}</strong> em {formatMonthYear(myUse.month)}. Você poderá sortear de novo apenas no próximo ciclo.</div>}
       </div>
 
-      {available&&!open&&(
-        <div style={{display:"flex",flexDirection:"column",gap:".55rem"}}>
-          {POWERS.map(p=>{
-            const reason=disabledReason(p);
-            return(
-              <div key={p.id} className="card no-hover" style={{padding:".8rem .9rem",opacity:reason?.55:1}}>
-                <div style={{display:"flex",alignItems:"center",gap:".7rem"}}>
-                  <span style={{fontSize:"1.3rem"}}>{p.ico}</span>
-                  <div style={{flex:1}}>
-                    <div style={{fontWeight:800,fontSize:".85rem"}}>{p.label}</div>
-                    <div style={{fontSize:".72rem",color:"rgba(26,26,46,.5)",fontWeight:600}}>{reason||p.desc}</div>
-                  </div>
-                  <button className="btn btn-pink btn-sm" disabled={!!reason} onClick={()=>setOpen(p.id)}>Usar</button>
-                </div>
-              </div>
-            );
-          })}
+      {available&&(
+        <div className="card no-hover" style={{textAlign:"center"}}>
+          <div style={{fontSize:".85rem",fontWeight:700,marginBottom:"1rem"}}>Sorteie qual poder você vai usar neste ciclo entre os disponíveis agora.</div>
+          {drawing
+            ?<div style={{padding:"1rem 0"}}><div className="spinner" style={{margin:"0 auto"}}/><div style={{marginTop:".7rem",fontSize:".8rem",fontWeight:700,color:"rgba(26,26,46,.5)"}}>Sorteando...</div></div>
+            :<button className="btn btn-raffle" disabled={usablePowers.length===0} onClick={drawPower}>🎲 SORTEAR MEU PODER</button>}
+          {usablePowers.length===0&&<div className="alert alert-warn" style={{marginTop:"1rem",textAlign:"left"}}>Nenhum poder está disponível agora (depende do estado do mês — livros na disputa, eliminados, etc). Tente de novo mais tarde.</div>}
         </div>
       )}
 
-      {available&&open&&(
+      {pending&&(
         <div className="card no-hover">
           <div style={{fontFamily:"var(--fd)",fontSize:".9rem",letterSpacing:"2px",marginBottom:".3rem"}}>{power.ico} {power.label.toUpperCase()}</div>
           <div style={{fontSize:".78rem",color:"rgba(26,26,46,.55)",fontWeight:600,marginBottom:".85rem"}}>{power.desc}</div>
@@ -1728,7 +1737,6 @@ function PowerPanel({members,currentUser,monthSugg,books,realMonth,phase,powerUs
             </>
           )}
 
-          <button className="btn btn-outline btn-full" style={{marginTop:".7rem"}} onClick={reset}>Cancelar</button>
         </div>
       )}
     </div>
@@ -2366,7 +2374,7 @@ function AdminPowers({members,books,powerUses,powerCycle,config,setConfig,isAdm,
               <div style={{flex:1}}>
                 <div style={{fontWeight:800,fontSize:".88rem"}}>{m.name}</div>
                 {use
-                  ?<div style={{fontSize:".72rem",color:"var(--orange)",fontWeight:700}}>Usado: {powerLabel(use.power)} em {formatMonthShort(use.month)}</div>
+                  ?<div style={{fontSize:".72rem",color:"var(--orange)",fontWeight:700}}>{use.details&&Object.keys(use.details).length>0?"Usado":"Sorteado (pendente)"}: {powerLabel(use.power)} em {formatMonthShort(use.month)}</div>
                   :<div style={{fontSize:".72rem",color:"var(--green)",fontWeight:700}}>Disponível</div>}
               </div>
               {isAdm&&use&&<button className="btn btn-outline btn-sm" onClick={()=>liberar(m.id)}>🔓 Liberar</button>}
