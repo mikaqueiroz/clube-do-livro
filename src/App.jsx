@@ -457,12 +457,17 @@ export default function App() {
   const setRules=(v)=>FS.set("monthRules",realMonth,v);
   const setViewRules=(v)=>FS.set("monthRules",viewMonth,v);
 
+  // Só libera votação depois que todo mundo (elegível) já eliminou seu livro individual —
+  // evita voto em livro que é eliminado individualmente depois, virando um "voto fantasma".
+  const eligibleElimMembers=members.filter(m=>m.id!=="adm"&&perms[m.id]?.canElim!==false);
+  const allIndivElimDone=eligibleElimMembers.length===0||eligibleElimMembers.every(m=>!!curElim[m.id]);
+
   const canDo=(memberId,action)=>{
     // Admin participa normalmente — sem restrições de fase ou permissão individual
     if(currentUser?.isAdmin)return true;
     const mp=perms[memberId]||{};
     if(action==="suggest")return phase==="suggest"&&mp.canSuggest!==false;
-    if(action==="vote")   return phase==="vote"&&mp.canVote!==false;
+    if(action==="vote")   return phase==="vote"&&mp.canVote!==false&&allIndivElimDone;
     if(action==="elim")   return(phase==="suggest"||phase==="vote")&&mp.canElim!==false;
     return true;
   };
@@ -501,7 +506,7 @@ export default function App() {
   );
 
   const sharedProps={members,books,suggestions,ratings,reviews,progressComments,currentUser,realMonth,viewMonth,rules,phase,curVotes,curElim,perms,voteCounts,getBookRatings,getBookAvg,setPhase,setVotes,setElim,setRules,setPerms,canDo,showToast,setPage,isViewingCurrent,isViewingFuture,
-    viewRules,setViewRules,viewPowerCycle,calendarMonth,isMonthAdvanced,
+    viewRules,setViewRules,viewPowerCycle,calendarMonth,isMonthAdvanced,allIndivElimDone,
     powerUses,powerCycle,config,setConfig,delegateDoc,themeOffers,
     // aliases usados pelo EliminationPage
     indivElim:curElim, setIndivElim:setElim,
@@ -1337,7 +1342,7 @@ function SuggCard({s,i,members,currentUser,onDelete,books,showMonth,onAddToMonth
 }
 
 // ─── ELIMINATION ──────────────────────────────────────────────────────────────
-function EliminationPage({monthSugg,curVotes,setVotes,curElim,setElim,members,currentUser,books,realMonth,rules,phase,setPhase,canDo,showToast,voteCounts,powerUses,powerCycle,delegateDoc,perms}) {
+function EliminationPage({monthSugg,curVotes,setVotes,curElim,setElim,members,currentUser,books,realMonth,rules,phase,setPhase,canDo,showToast,voteCounts,powerUses,powerCycle,delegateDoc,perms,allIndivElimDone}) {
   const [tab,setTab]=useState(()=>phase==="vote"?"vote":(phase==="raffle"||phase==="reading"||phase==="done")?"raffle":"indiv");
   const [raffleResult,setRaffleResult]=useState(null);
   const [spinning,setSpinning]=useState(false);
@@ -1461,6 +1466,7 @@ function EliminationPage({monthSugg,curVotes,setVotes,curElim,setElim,members,cu
       {tab==="vote"&&(
         <div>
           {phase==="suggest"&&!currentUser.isAdmin&&<div className="alert alert-info">🔒 Votação liberada automaticamente quando todos sugerirem!</div>}
+          {phase==="vote"&&!allIndivElimDone&&!currentUser.isAdmin&&<div className="alert alert-warn">🔒 Votação libera assim que todo mundo eliminar seu livro individual. Falta: {missingElim.map(m=>m.name).join(", ")}.</div>}
           <div className="card no-hover" style={{marginBottom:"1rem"}}>
             <div style={{fontFamily:"var(--fd)",fontSize:".8rem",letterSpacing:"2px",color:"var(--purple)",marginBottom:".4rem"}}>VOTAÇÃO</div>
             <div style={{fontSize:".85rem",fontWeight:700,marginBottom:".4rem"}}>Vote em até {rules.maxElimVotes||2} livro(s). Os mais votados são eliminados.</div>
