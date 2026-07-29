@@ -1347,7 +1347,9 @@ function EliminationPage({monthSugg,curVotes,setVotes,curElim,setElim,members,cu
   const active=monthSugg.filter(s=>!s.eliminated&&!s.raffled);
   const eliminated=monthSugg.filter(s=>s.eliminated);
   const myElim=curElim[currentUser.id];
-  const myVotes=curVotes[currentUser.id]||[];
+  // Ignora votos "fantasma" em livros que já foram eliminados (por eliminação individual) nesse meio-tempo —
+  // sem isso, esse voto ocupava a cota da pessoa sem aparecer em lugar nenhum pra ela desmarcar.
+  const myVotes=(curVotes[currentUser.id]||[]).filter(id=>active.some(s=>s.id===id));
   const afterElim=monthSugg.filter(s=>!s.eliminated&&!s.raffled);
   const raffledBook=books.find(b=>b.date?.slice(0,7)===realMonth&&b.isRaffled);
   const showVoteDetails=phase==="raffle"||phase==="reading"||phase==="done"||currentUser.isAdmin;
