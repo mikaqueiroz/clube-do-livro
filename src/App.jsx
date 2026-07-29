@@ -1418,7 +1418,7 @@ function EliminationPage({monthSugg,curVotes,setVotes,curElim,setElim,members,cu
       <div className="page-title">ELIMI<span className="accent">NAÇÃO</span></div>
       <div className="page-sub">Filtre e sorteia o livro do mês</div>
       <div className="tab-bar" style={{flexWrap:"wrap"}}>
-        <button className={`tab-btn${tab==="indiv"?" active":""}`} onClick={()=>setTab("indiv")}>INDIVIDUAL</button>
+        <button className={`tab-btn${tab==="indiv"?" active":""}`} onClick={()=>setTab("indiv")}>ELIMINAÇÃO</button>
         <button className={`tab-btn${tab==="vote"?" active":""}`} onClick={()=>setTab("vote")}>VOTAÇÃO {phase==="suggest"&&<span className="badge badge-pink" style={{marginLeft:3}}>🔒</span>}</button>
         <button className={`tab-btn${tab==="raffle"?" active":""}`} onClick={()=>setTab("raffle")}>SORTEIO</button>
         {currentUser.id!=="adm"&&<button className={`tab-btn${tab==="power"?" active":""}`} onClick={()=>setTab("power")}>⚡ PODER</button>}
