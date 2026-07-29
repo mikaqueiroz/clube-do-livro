@@ -382,11 +382,7 @@ export default function App() {
   const [seeded,setSeeded]=useState(false);
   // viewMonth: mês sendo visualizado (pode diferir do mês real)
   const [viewMonth,setViewMonth]=useState(currentMonthKey());
-  const realMonth = currentMonthKey();
-  const isViewingCurrent = viewMonth === realMonth;
-  const isViewingFuture = viewMonth > realMonth;
-  // navegação pro futuro é limitada a 1 mês (pra dar pra planejar o tema com antecedência)
-  const maxViewMonth = addMonths(realMonth,1);
+  const calendarMonth = currentMonthKey();
 
   const {data:members,loading:lM}=useCol("members");
   const {data:books,loading:lB}=useCol("books");
@@ -394,6 +390,22 @@ export default function App() {
   const {data:ratings,loading:lR}=useCol("ratings");
   const {data:reviews}=useCol("reviews");
   const {data:progressComments}=useCol("progressComments");
+  const {data:configDoc} =useDocFS("config","general");
+
+  const config   = {powerCycleStart:"2025-01",...configDoc};
+  const setConfig= (v)=>FS.set("config","general",v);
+  // "Adiantar mês" (admin): trata o mês escolhido como se fosse o mês atual em todo o app,
+  // pra dar pra fazer eliminação/votação/sorteio do mês seguinte antes do calendário virar.
+  // Some sozinho quando o calendário real alcança o mês adiantado.
+  const realMonth = config.monthOverride || calendarMonth;
+  const isMonthAdvanced = !!config.monthOverride && config.monthOverride!==calendarMonth;
+  const isViewingCurrent = viewMonth === realMonth;
+  const isViewingFuture = viewMonth > realMonth;
+  // navegação pro futuro é limitada a 1 mês (pra dar pra planejar o tema com antecedência)
+  const maxViewMonth = addMonths(realMonth,1);
+
+  // Sempre que o mês "atual" muda (calendário real ou mês adiantado pelo admin), acompanha ele por padrão
+  useEffect(()=>{setViewMonth(realMonth)},[realMonth]);
 
   const {data:rulesDoc}  =useDocFS("monthRules",realMonth);
   const {data:viewRulesDoc}=useDocFS("monthRules",viewMonth);
@@ -401,7 +413,6 @@ export default function App() {
   const {data:elimDoc}   =useDocFS("indivElim",realMonth);
   const {data:permsDoc}  =useDocFS("monthPerms",realMonth);
   const {data:phaseDoc}  =useDocFS("monthPhase",realMonth);
-  const {data:configDoc} =useDocFS("config","general");
   const {data:delegateDoc}=useDocFS("raffleDelegate",realMonth);
   const {data:powerUses} =useCol("powerUses");
   const {data:themeOffers}=useCol("themeOffers");
@@ -412,8 +423,6 @@ export default function App() {
   const curElim  = elimDoc||{};
   const perms    = permsDoc||{};
   const phase    = phaseDoc?.phase||"suggest";
-  const config   = {powerCycleStart:"2025-01",...configDoc};
-  const setConfig= (v)=>FS.set("config","general",v);
   const powerCycle = cycleIndexFor(realMonth, config.powerCycleStart);
   const viewPowerCycle = cycleIndexFor(viewMonth, config.powerCycleStart);
 
@@ -492,7 +501,7 @@ export default function App() {
   );
 
   const sharedProps={members,books,suggestions,ratings,reviews,progressComments,currentUser,realMonth,viewMonth,rules,phase,curVotes,curElim,perms,voteCounts,getBookRatings,getBookAvg,setPhase,setVotes,setElim,setRules,setPerms,canDo,showToast,setPage,isViewingCurrent,isViewingFuture,
-    viewRules,setViewRules,viewPowerCycle,
+    viewRules,setViewRules,viewPowerCycle,calendarMonth,isMonthAdvanced,
     powerUses,powerCycle,config,setConfig,delegateDoc,themeOffers,
     // aliases usados pelo EliminationPage
     indivElim:curElim, setIndivElim:setElim,
@@ -2099,7 +2108,7 @@ function LockBadge() {
   );
 }
 
-function AdminPage({members,books,suggestions,ratings,reviews,setRules,curVotes,setVotes,curElim,setElim,perms,setPerms,currentUser,realMonth,rules,phase,setPhase,showToast,realMonthSugg,powerUses,powerCycle,config,setConfig,viewMonth,isViewingCurrent,viewRules,setViewRules}) {
+function AdminPage({members,books,suggestions,ratings,reviews,setRules,curVotes,setVotes,curElim,setElim,perms,setPerms,currentUser,realMonth,rules,phase,setPhase,showToast,realMonthSugg,powerUses,powerCycle,config,setConfig,viewMonth,isViewingCurrent,viewRules,setViewRules,calendarMonth,isMonthAdvanced}) {
   const [tab,setTab]=useState("members");
   const isAdm=currentUser.isAdmin;
   // Painel → Regras edita o mês visualizado (permite configurar o tema do mês seguinte com antecedência)
@@ -2134,7 +2143,7 @@ function AdminPage({members,books,suggestions,ratings,reviews,setRules,curVotes,
       {tab==="perms"   &&<AdminPerms  members={members} perms={perms} setPerms={setPerms} month={realMonth} isAdm={isAdm} showToast={showToast}/>}
       {tab==="rules"   &&<AdminRules  month={rulesMonth} rules={rulesForMonth} setRules={setRulesForMonth} isAdm={isAdm} showToast={showToast}/>}
       {tab==="powers"  &&<AdminPowers members={members} books={books} powerUses={powerUses} powerCycle={powerCycle} config={config} setConfig={setConfig} isAdm={isAdm} showToast={showToast}/>}
-      {tab==="phase"   &&<AdminPhase  phase={phase} setPhase={setPhase} month={realMonth} suggestions={realMonthSugg} curVotes={curVotes} setVotes={setVotes} curElim={curElim} setElim={setElim} isAdm={isAdm} showToast={showToast}/>}
+      {tab==="phase"   &&<AdminPhase  phase={phase} setPhase={setPhase} month={realMonth} calendarMonth={calendarMonth} config={config} setConfig={setConfig} isMonthAdvanced={isMonthAdvanced} suggestions={realMonthSugg} curVotes={curVotes} setVotes={setVotes} curElim={curElim} setElim={setElim} isAdm={isAdm} showToast={showToast}/>}
       {tab==="export"  &&<AdminExport books={books} members={members} suggestions={suggestions} ratings={ratings} showToast={showToast}/>}
     </div>
   );
@@ -2443,7 +2452,7 @@ function AdminRules({month, rules, setRules, isAdm, showToast}) {
 }
 
 // ── ADMIN: FASE ───────────────────────────────────────────────────────────────
-function AdminPhase({phase, setPhase, month, suggestions, curVotes, setVotes, curElim, setElim, isAdm, showToast}) {
+function AdminPhase({phase, setPhase, month, calendarMonth, config, setConfig, isMonthAdvanced, suggestions, curVotes, setVotes, curElim, setElim, isAdm, showToast}) {
   const phases=[
     {id:"suggest",label:"Sugestões abertas",  ico:"💡",color:"var(--green)"},
     {id:"vote",   label:"Votação/Eliminação",  ico:"🗳️",color:"var(--orange)"},
@@ -2460,8 +2469,33 @@ function AdminPhase({phase, setPhase, month, suggestions, curVotes, setVotes, cu
     showToast("Mês resetado! 🔄");
   };
 
+  const advanceMonth=async()=>{
+    const next=addMonths(month,1);
+    if(!confirm(`Isso faz o app inteiro (pra todo mundo) tratar ${formatMonthYear(next)} como o mês atual, antes do calendário virar. Continuar?`))return;
+    await setConfig({...config,monthOverride:next});
+    showToast(`⏩ Mês adiantado para ${formatMonthYear(next)}!`);
+  };
+  const revertMonth=async()=>{
+    await setConfig({...config,monthOverride:null});
+    showToast("Mês voltou a acompanhar o calendário real.");
+  };
+
   return(
     <div>
+      {isAdm&&(
+        <div className="card no-hover" style={{marginBottom:"1rem",borderColor:"var(--purple)"}}>
+          <div style={{fontFamily:"var(--fd)",fontSize:"1rem",letterSpacing:"2px",color:"var(--purple)",marginBottom:".5rem"}}>⏩ ADIANTAR MÊS</div>
+          <div style={{fontSize:".78rem",color:"rgba(26,26,46,.55)",fontWeight:600,marginBottom:".75rem"}}>
+            {isMonthAdvanced
+              ?<>O clube está adiantado: todo mundo está usando <strong>{formatMonthYear(month)}</strong> como mês atual (o calendário real ainda está em {formatMonthYear(calendarMonth)}). Isso volta sozinho quando o calendário alcançar.</>
+              :<>Faz o app inteiro pular pro mês seguinte ({formatMonthYear(addMonths(month,1))}) antes do calendário virar — útil pra fazer eliminação/votação/sorteio com antecedência.</>}
+          </div>
+          {isMonthAdvanced
+            ?<button className="btn btn-ghost btn-full" onClick={revertMonth}>↩️ Voltar para o mês real ({formatMonthYear(calendarMonth)})</button>
+            :<button className="btn btn-outline btn-full" style={{borderColor:"var(--purple)",color:"var(--purple)"}} onClick={advanceMonth}>⏩ Adiantar para {formatMonthYear(addMonths(month,1))}</button>}
+        </div>
+      )}
+
       <div className="card no-hover" style={{marginBottom:"1rem"}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:"1rem"}}>
           <div style={{fontFamily:"var(--fd)",fontSize:"1rem",letterSpacing:"2px"}}>
